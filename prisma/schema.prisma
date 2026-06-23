@@ -1,0 +1,231 @@
+// Schema de la base de datos para BarberApp
+// Multi-tenant: cada Barberia es un "tenant" independiente
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============= TENANT =============
+
+model Barberia {
+  id        String   @id @default(cuid())
+  nombre    String
+  slug      String   @unique // usado en la url publica: /reservar/[slug]
+  telefono  String?
+  direccion String?
+  logoUrl   String?
+  zonaHoraria String @default("America/Argentina/Buenos_Aires")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  miembros     MiembroBarberia[]
+  servicios    Servicio[]
+  turnos       Turno[]
+  suscripcion  Suscripcion?
+
+  @@map("barberias")
+}
+
+// ============= USUARIOS Y ROLES =============
+
+enum RolGlobal {
+  SUPER_ADMIN // vos, gestionando la plataforma
+  USUARIO
+}
+
+enum RolBarberia {
+  DUENO
+  BARBERO
+  CLIENTE
+}
+
+model Usuario {
+  id            String    @id @default(cuid())
+  nombre        String
+  email         String    @unique
+  passwordHash  String
+  telefono      String?
+  rolGlobal     RolGlobal @default(USUARIO)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  membresias    MiembroBarberia[]
+  turnosComoCliente Turno[] @relation("TurnosCliente")
+
+  @@map("usuarios")
+}
+
+// Tabla puente: un usuario puede ser dueño/barbero de UNA barberia
+// y a la vez cliente de OTRAS barberias (por eso es muchos a muchos)
+model MiembroBarberia {
+  id          String      @id @default(cuid())
+  barberiaId  String
+  usuarioId   String
+  rol         RolBarberia
+  activo      Boolean     @default(true)
+  // Solo relevante si rol = BARBERO
+  colorAgenda String?     @default("#3b82f6")
+  createdAt   DateTime    @default(now())
+
+  barberia    Barberia @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
+  usuario     Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  serviciosAsignados BarberoServicio[]
+  turnosComoBarbero  Turno[] @relation("TurnosBarbero")
+
+  @@unique([barberiaId, usuarioId])
+  @@map("miembros_barberia")
+}
+
+// ============= SERVICIOS =============
+
+model Servicio {
+  id              String   @id @default(cuid())
+  barberiaId      String
+  nombre          String
+  descripcion     String?
+  precio          Decimal  @db.Decimal(10, 2)
+  duracionMinutos Int
+  activo          Boolean  @default(true)
+  orden           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  barberia        Barberia @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
+  barberosAsignados BarberoServicio[]
+  turnos          Turno[]
+
+  @@map("servicios")
+}
+
+// Tabla puente: que barbero puede realizar que servicio
+model BarberoServicio {
+  id         String @id @default(cuid())
+  barberoId  String // referencia a MiembroBarberia.id (donde rol = BARBERO)
+  servicioId String
+
+  barbero    MiembroBarberia @relation(fields: [barberoId], references: [id], onDelete: Cascade)
+  servicio   Servicio        @relation(fields: [servicioId], references: [id], onDelete: Cascade)
+
+  @@unique([barberoId, servicioId])
+  @@map("barbero_servicios")
+}
+
+// ============= TURNOS =============
+
+enum EstadoTurno {
+  PENDIENTE
+  CONFIRMADO
+  COMPLETADO
+  CANCELADO
+  NO_ASISTIO
+}
+
+model Turno {
+  id          String      @id @default(cuid())
+  barberiaId  String
+  barberoId   String      // MiembroBarberia.id
+  clienteId   String      // Usuario.id
+  servicioId  String
+  fecha       DateTime    @db.Date
+  horaInicio  String      // formato "HH:mm"
+  horaFin     String      // formato "HH:mm"
+  estado      EstadoTurno @default(PENDIENTE)
+  precioCobrado Decimal   @db.Decimal(10, 2)
+  notas       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  barberia    Barberia        @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
+  barbero     MiembroBarberia @relation("TurnosBarbero", fields: [barberoId], references: [id])
+  cliente     Usuario         @relation("TurnosCliente", fields: [clienteId], references: [id])
+  servicio    Servicio        @relation(fields: [servicioId], references: [id])
+
+  @@index([barberiaId, fecha])
+  @@index([barberoId, fecha])
+  @@map("turnos")
+}
+
+// Bloqueos de horario del barbero (vacaciones, almuerzo, etc.)
+model BloqueoHorario {
+  id         String   @id @default(cuid())
+  barberoId  String
+  fecha      DateTime @db.Date
+  horaInicio String
+  horaFin    String
+  motivo     String?
+  createdAt  DateTime @default(now())
+
+  @@index([barberoId, fecha])
+  @@map("bloqueos_horario")
+}
+
+// Horario habitual de atencion del barbero por dia de semana
+model HorarioAtencion {
+  id          String @id @default(cuid())
+  barberoId   String
+  diaSemana   Int    // 0 = domingo, 6 = sabado
+  horaInicio  String
+  horaFin     String
+  activo      Boolean @default(true)
+
+  @@unique([barberoId, diaSemana])
+  @@map("horarios_atencion")
+}
+
+// ============= SUSCRIPCION (SaaS) =============
+
+enum PlanSuscripcion {
+  BASICO
+  PRO
+  PREMIUM
+}
+
+enum EstadoSuscripcion {
+  ACTIVA
+  VENCIDA
+  CANCELADA
+  PRUEBA
+}
+
+model Suscripcion {
+  id                  String            @id @default(cuid())
+  barberiaId          String            @unique
+  plan                PlanSuscripcion   @default(BASICO)
+  estado              EstadoSuscripcion @default(PRUEBA)
+  precioMensual       Decimal           @db.Decimal(10, 2)
+  fechaInicio         DateTime          @default(now())
+  fechaProximoPago    DateTime
+  mercadopagoSubId    String?           // id de la suscripcion en Mercado Pago
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  barberia            Barberia @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
+  pagos               PagoSuscripcion[]
+
+  @@map("suscripciones")
+}
+
+enum EstadoPago {
+  APROBADO
+  RECHAZADO
+  PENDIENTE
+}
+
+model PagoSuscripcion {
+  id              String     @id @default(cuid())
+  suscripcionId   String
+  monto           Decimal    @db.Decimal(10, 2)
+  estado          EstadoPago
+  mercadopagoId   String?
+  fechaPago       DateTime   @default(now())
+
+  suscripcion     Suscripcion @relation(fields: [suscripcionId], references: [id], onDelete: Cascade)
+
+  @@map("pagos_suscripcion")
+}

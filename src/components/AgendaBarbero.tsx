@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { formatearMoneda, iniciales } from "@/lib/utils";
 import { actualizarEstadoTurnoBarbero } from "@/lib/actions/barbero";
+import { ModalReprogramarTurno } from "@/components/ModalReprogramarTurno";
 
 type Turno = {
   id: string;
+  fecha: string; // YYYY-MM-DD, necesario para reprogramar
   horaInicio: string;
   clienteNombre: string;
   servicioNombre: string;
@@ -15,13 +17,18 @@ type Turno = {
 };
 
 export function AgendaBarbero({
+  barberiaId,
+  barberoId,
   nombreBarbero,
   turnos: turnosIniciales,
 }: {
+  barberiaId: string;
+  barberoId: string;
   nombreBarbero: string;
   turnos: Turno[];
 }) {
   const [turnos, setTurnos] = useState(turnosIniciales);
+  const [turnoAReprogramar, setTurnoAReprogramar] = useState<Turno | null>(null);
 
   const completados = turnos.filter((t) => t.estado === "COMPLETADO");
   const pendientes = turnos.filter((t) => t.estado === "PENDIENTE" ||t.estado === "CONFIRMADO");
@@ -94,7 +101,14 @@ async function actualizarEstado(
               <p className="text-xs text-accent-700">
                 {proximo.servicioNombre} · {proximo.duracionMinutos} min
               </p>
-             <div className="grid grid-cols-3 gap-2 mt-3">
+             <div className="grid grid-cols-2 gap-2 mt-3">
+  <button
+    onClick={() => setTurnoAReprogramar(proximo)}
+    className="py-2 bg-white border border-brand-200 text-brand-700 rounded-md text-sm"
+  >
+    Reprogramar
+  </button>
+
   <button
     onClick={() => actualizarEstado(proximo.id, "COMPLETADO")}
     className="py-2 bg-green-600 text-white rounded-md text-sm"
@@ -144,6 +158,34 @@ async function actualizarEstado(
           </p>
         )}
       </div>
+
+      {turnoAReprogramar && (
+        <ModalReprogramarTurno
+          turno={{
+            id: turnoAReprogramar.id,
+            barberiaId,
+            barberoId,
+            fecha: turnoAReprogramar.fecha,
+            horaInicio: turnoAReprogramar.horaInicio,
+            duracionMinutos: turnoAReprogramar.duracionMinutos,
+            clienteNombre: turnoAReprogramar.clienteNombre,
+            servicioNombre: turnoAReprogramar.servicioNombre,
+            barberoNombre: nombreBarbero,
+          }}
+          permitirCambiarBarbero={false}
+          onCerrar={() => setTurnoAReprogramar(null)}
+          onGuardado={() => {
+            // Si la nueva fecha/horario sigue siendo hoy, el turno deberia
+            // seguir viendose en esta agenda tras recargar la pagina; si
+            // se movio a otro dia, dejara de aparecer en la agenda de hoy.
+            // Usamos window.location.reload() en vez de router.refresh()
+            // porque este componente no tiene acceso directo al router
+            // (mantenemos el componente protegido lo mas intacto posible).
+            setTurnoAReprogramar(null);
+            window.location.reload();
+          }}
+        />
+      )}
     </div>
   );
 }

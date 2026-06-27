@@ -47,7 +47,7 @@ export async function crearBarbero(input: z.infer<typeof esquemaBarbero>) {
 
   // Horario de atencion default: lunes a sabado, 9 a 19hs.
   // El dueño lo puede ajustar despues desde el panel.
-  for (let dia = 1; dia <= 6; dia++) {
+  for (let dia = 0; dia <= 6; dia++) {
     await prisma.horarioAtencion.create({
       data: {
         barberoId: miembro.id,

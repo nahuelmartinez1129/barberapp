@@ -4,6 +4,9 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { formatearMoneda, iniciales, cn } from "@/lib/utils";
 import { cambiarEstadoTurno } from "@/lib/actions/turnos-admin";
+import { ModalNuevoTurno } from "@/components/ModalNuevoTurno";
+import { ModalReprogramarTurno } from "@/components/ModalReprogramarTurno";
+import { ModalVistaCliente } from "@/components/ModalVistaCliente";
 
 type Turno = {
   id: string;
@@ -11,7 +14,10 @@ type Turno = {
   horaInicio: string;
   estado: string;
   precioCobrado: string;
+  duracionMinutos: number;
+  clienteId: string;
   clienteNombre: string;
+  clienteTelefono: string | null;
   servicioNombre: string;
   barberoId: string;
   barberoNombre: string;
@@ -21,6 +27,14 @@ type Turno = {
 type Barbero = {
   id: string;
   nombre: string;
+};
+
+type ServicioParaModal = {
+  id: string;
+  nombre: string;
+  precio: string;
+  duracionMinutos: number;
+  barberoIds: string[];
 };
 
 const ESTILO_ESTADO: Record<string, string> = {
@@ -40,18 +54,25 @@ const ETIQUETA_ESTADO: Record<string, string> = {
 };
 
 export function ListaTurnos({
+  barberiaId,
   turnos,
   barberos,
+  servicios,
   fechaInicial,
 }: {
+  barberiaId: string;
   turnos: Turno[];
   barberos: Barbero[];
+  servicios: ServicioParaModal[];
   fechaInicial: string;
 }) {
   const router = useRouter();
   const [fecha, setFecha] = useState(fechaInicial);
   const [barberoId, setBarberoId] = useState("todos");
   const [actualizandoId, setActualizandoId] = useState<string | null>(null);
+  const [mostrandoNuevoTurno, setMostrandoNuevoTurno] = useState(false);
+  const [turnoAReprogramar, setTurnoAReprogramar] = useState<Turno | null>(null);
+  const [clienteVisto, setClienteVisto] = useState<string | null>(null);
 
   const turnosFiltrados = useMemo(() => {
     return turnos.filter((t) => {
@@ -70,25 +91,34 @@ export function ListaTurnos({
 
   return (
     <div>
-      <div className="flex flex-col sm:flex-row gap-3 mb-5">
-        <input
-          type="date"
-          value={fecha}
-          onChange={(e) => setFecha(e.target.value)}
-          className="input-base sm:w-auto"
-        />
-        <select
-          value={barberoId}
-          onChange={(e) => setBarberoId(e.target.value)}
-          className="input-base sm:w-auto"
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <input
+            type="date"
+            value={fecha}
+            onChange={(e) => setFecha(e.target.value)}
+            className="input-base sm:w-auto"
+          />
+          <select
+            value={barberoId}
+            onChange={(e) => setBarberoId(e.target.value)}
+            className="input-base sm:w-auto"
+          >
+            <option value="todos">Todos los barberos</option>
+            {barberos.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.nombre}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          onClick={() => setMostrandoNuevoTurno(true)}
+          className="btn-primary whitespace-nowrap"
         >
-          <option value="todos">Todos los barberos</option>
-          {barberos.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.nombre}
-            </option>
-          ))}
-        </select>
+          + Nuevo turno
+        </button>
       </div>
 
       {turnosFiltrados.length === 0 && (
@@ -106,23 +136,39 @@ export function ListaTurnos({
               <div
                 className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-medium text-white shrink-0"
                 style={{ backgroundColor: t.barberoColor }}
+                title={t.barberoNombre}
               >
                 {iniciales(t.barberoNombre)}
               </div>
               <div className="min-w-0">
-                <p className="text-sm text-brand-900 truncate">
+                <button
+                  type="button"
+                  onClick={() => setClienteVisto(t.clienteId)}
+                  className="text-sm text-brand-900 hover:underline truncate text-left block"
+                >
                   {t.clienteNombre} · {t.servicioNombre}
+                </button>
+                <p className="text-xs text-brand-400">
+                  {formatearMoneda(t.precioCobrado)} · {t.duracionMinutos} min · {t.barberoNombre}
+                  {t.clienteTelefono && <> · {t.clienteTelefono}</>}
                 </p>
-                <p className="text-xs text-brand-400">{formatearMoneda(t.precioCobrado)}</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
               <span className={cn("badge", ESTILO_ESTADO[t.estado])}>
                 {ETIQUETA_ESTADO[t.estado]}
               </span>
              {!["COMPLETADO", "CANCELADO", "NO_ASISTIO"].includes(t.estado) && (
   <>
+    <button
+      disabled={actualizandoId === t.id}
+      onClick={() => setTurnoAReprogramar(t)}
+      className="text-xs text-accent-600 hover:text-accent-700 underline"
+    >
+      Reprogramar
+    </button>
+
     <button
       disabled={actualizandoId === t.id}
       onClick={() => actualizar(t.id, "COMPLETADO")}
@@ -152,6 +198,50 @@ export function ListaTurnos({
           </div>
         ))}
       </div>
+
+      {mostrandoNuevoTurno && (
+        <ModalNuevoTurno
+          barberiaId={barberiaId}
+          barberos={barberos}
+          servicios={servicios}
+          onCerrar={() => setMostrandoNuevoTurno(false)}
+          onCreado={() => {
+            setMostrandoNuevoTurno(false);
+            router.refresh();
+          }}
+        />
+      )}
+
+      {turnoAReprogramar && (
+        <ModalReprogramarTurno
+          turno={{
+            id: turnoAReprogramar.id,
+            barberiaId,
+            barberoId: turnoAReprogramar.barberoId,
+            fecha: turnoAReprogramar.fecha.slice(0, 10),
+            horaInicio: turnoAReprogramar.horaInicio,
+            duracionMinutos: turnoAReprogramar.duracionMinutos,
+            clienteNombre: turnoAReprogramar.clienteNombre,
+            servicioNombre: turnoAReprogramar.servicioNombre,
+            barberoNombre: turnoAReprogramar.barberoNombre,
+          }}
+          permitirCambiarBarbero
+          barberosDisponibles={barberos}
+          onCerrar={() => setTurnoAReprogramar(null)}
+          onGuardado={() => {
+            setTurnoAReprogramar(null);
+            router.refresh();
+          }}
+        />
+      )}
+
+      {clienteVisto && (
+        <ModalVistaCliente
+          barberiaId={barberiaId}
+          clienteId={clienteVisto}
+          onCerrar={() => setClienteVisto(null)}
+        />
+      )}
     </div>
   );
 }

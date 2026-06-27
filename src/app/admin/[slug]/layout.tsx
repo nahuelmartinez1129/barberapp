@@ -34,6 +34,7 @@ export default async function AdminLayout({
         slug={params.slug}
         nombreBarberia={barberia.nombre}
         estadoAcceso={estadoAcceso}
+        logoUrl={barberia.logoUrl}
       />
       <main className="flex-1 p-4 lg:p-6 min-w-0 max-w-full">
         {!estadoAcceso.tieneAcceso ? (

@@ -23,6 +23,7 @@ type Barberia = {
   id: string;
   nombre: string;
   slug: string;
+  logoUrl?: string | null;
 };
 
 export function ReservaWizard({
@@ -59,7 +60,7 @@ export function ReservaWizard({
 
     setCargandoHorarios(true);
     fetch(
-      `/api/disponibilidad?barberoId=${barberoId}&fecha=${fecha}&duracion=${servicioActivo.duracionMinutos}`
+      `/api/disponibilidad?barberiaId=${barberia.id}&barberoId=${barberoId}&fecha=${fecha}&duracion=${servicioActivo.duracionMinutos}`
     )
       .then((r) => r.json())
       .then((data) => setHorariosDisponibles(data.horarios ?? []))
@@ -111,6 +112,14 @@ export function ReservaWizard({
   return (
     <div className="max-w-md mx-auto bg-white border border-brand-100 rounded-lg overflow-hidden">
       <div className="px-5 py-4 border-b border-brand-100">
+        {barberia.logoUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={barberia.logoUrl}
+            alt={barberia.nombre}
+            className="w-12 h-12 rounded-full object-cover border border-brand-100 mb-2"
+          />
+        )}
         <p className="font-medium text-brand-900">{barberia.nombre}</p>
         <p className="text-xs text-brand-400">Reservá tu turno online</p>
       </div>
@@ -213,7 +222,7 @@ export function ReservaWizard({
 
             {!cargandoHorarios && horariosDisponibles.length === 0 && (
               <p className="text-sm text-brand-400">
-                No hay horarios disponibles ese día. Probá otra fecha.
+                No hay horarios disponibles para este día.
               </p>
             )}
 

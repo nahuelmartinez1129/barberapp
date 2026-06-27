@@ -13,20 +13,21 @@ datasource db {
 // ============= TENANT =============
 
 model Barberia {
-  id        String   @id @default(cuid())
-  nombre    String
-  slug      String   @unique // usado en la url publica: /reservar/[slug]
-  telefono  String?
-  direccion String?
-  logoUrl   String?
-  zonaHoraria String @default("America/Argentina/Buenos_Aires")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  nombre      String
+  slug        String   @unique // usado en la url publica: /reservar/[slug]
+  telefono    String?
+  direccion   String?
+  logoUrl     String?
+  zonaHoraria String   @default("America/Argentina/Buenos_Aires")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  miembros     MiembroBarberia[]
-  servicios    Servicio[]
-  turnos       Turno[]
-  suscripcion  Suscripcion?
+  miembros    MiembroBarberia[]
+  servicios   Servicio[]
+  turnos      Turno[]
+  suscripcion Suscripcion?
+  horarios    HorarioBarberia[]
 
   @@map("barberias")
 }
@@ -45,17 +46,17 @@ enum RolBarberia {
 }
 
 model Usuario {
-  id            String    @id @default(cuid())
-  nombre        String
-  email         String    @unique
-  passwordHash  String
-  telefono      String?
-  rolGlobal     RolGlobal @default(USUARIO)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id           String    @id @default(cuid())
+  nombre       String
+  email        String    @unique
+  passwordHash String
+  telefono     String?
+  rolGlobal    RolGlobal @default(USUARIO)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  membresias    MiembroBarberia[]
-  turnosComoCliente Turno[] @relation("TurnosCliente")
+  membresias        MiembroBarberia[]
+  turnosComoCliente Turno[]           @relation("TurnosCliente")
 
   @@map("usuarios")
 }
@@ -72,11 +73,11 @@ model MiembroBarberia {
   colorAgenda String?     @default("#3b82f6")
   createdAt   DateTime    @default(now())
 
-  barberia    Barberia @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
-  usuario     Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  barberia Barberia @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
+  usuario  Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 
   serviciosAsignados BarberoServicio[]
-  turnosComoBarbero  Turno[] @relation("TurnosBarbero")
+  turnosComoBarbero  Turno[]           @relation("TurnosBarbero")
 
   @@unique([barberiaId, usuarioId])
   @@map("miembros_barberia")
@@ -96,9 +97,9 @@ model Servicio {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  barberia        Barberia @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
+  barberia          Barberia          @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
   barberosAsignados BarberoServicio[]
-  turnos          Turno[]
+  turnos            Turno[]
 
   @@map("servicios")
 }
@@ -109,8 +110,8 @@ model BarberoServicio {
   barberoId  String // referencia a MiembroBarberia.id (donde rol = BARBERO)
   servicioId String
 
-  barbero    MiembroBarberia @relation(fields: [barberoId], references: [id], onDelete: Cascade)
-  servicio   Servicio        @relation(fields: [servicioId], references: [id], onDelete: Cascade)
+  barbero  MiembroBarberia @relation(fields: [barberoId], references: [id], onDelete: Cascade)
+  servicio Servicio        @relation(fields: [servicioId], references: [id], onDelete: Cascade)
 
   @@unique([barberoId, servicioId])
   @@map("barbero_servicios")
@@ -127,24 +128,24 @@ enum EstadoTurno {
 }
 
 model Turno {
-  id          String      @id @default(cuid())
-  barberiaId  String
-  barberoId   String      // MiembroBarberia.id
-  clienteId   String      // Usuario.id
-  servicioId  String
-  fecha       DateTime    @db.Date
-  horaInicio  String      // formato "HH:mm"
-  horaFin     String      // formato "HH:mm"
-  estado      EstadoTurno @default(PENDIENTE)
-  precioCobrado Decimal   @db.Decimal(10, 2)
-  notas       String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id            String      @id @default(cuid())
+  barberiaId    String
+  barberoId     String // MiembroBarberia.id
+  clienteId     String // Usuario.id
+  servicioId    String
+  fecha         DateTime    @db.Date
+  horaInicio    String // formato "HH:mm"
+  horaFin       String // formato "HH:mm"
+  estado        EstadoTurno @default(PENDIENTE)
+  precioCobrado Decimal     @db.Decimal(10, 2)
+  notas         String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
-  barberia    Barberia        @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
-  barbero     MiembroBarberia @relation("TurnosBarbero", fields: [barberoId], references: [id])
-  cliente     Usuario         @relation("TurnosCliente", fields: [clienteId], references: [id])
-  servicio    Servicio        @relation(fields: [servicioId], references: [id])
+  barberia Barberia        @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
+  barbero  MiembroBarberia @relation("TurnosBarbero", fields: [barberoId], references: [id])
+  cliente  Usuario         @relation("TurnosCliente", fields: [clienteId], references: [id])
+  servicio Servicio        @relation(fields: [servicioId], references: [id])
 
   @@index([barberiaId, fecha])
   @@index([barberoId, fecha])
@@ -167,15 +168,29 @@ model BloqueoHorario {
 
 // Horario habitual de atencion del barbero por dia de semana
 model HorarioAtencion {
-  id          String @id @default(cuid())
-  barberoId   String
-  diaSemana   Int    // 0 = domingo, 6 = sabado
-  horaInicio  String
-  horaFin     String
-  activo      Boolean @default(true)
+  id         String  @id @default(cuid())
+  barberoId  String
+  diaSemana  Int // 0 = domingo, 6 = sabado
+  horaInicio String
+  horaFin    String
+  activo     Boolean @default(true)
 
   @@unique([barberoId, diaSemana])
   @@map("horarios_atencion")
+}
+
+model HorarioBarberia {
+  id         String  @id @default(cuid())
+  barberiaId String
+  diaSemana  Int
+  activo     Boolean @default(true)
+  horaInicio String
+  horaFin    String
+
+  barberia Barberia @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
+
+  @@unique([barberiaId, diaSemana])
+  @@map("horarios_barberia")
 }
 
 // ============= SUSCRIPCION (SaaS) =============
@@ -194,19 +209,19 @@ enum EstadoSuscripcion {
 }
 
 model Suscripcion {
-  id                  String            @id @default(cuid())
-  barberiaId          String            @unique
-  plan                PlanSuscripcion   @default(BASICO)
-  estado              EstadoSuscripcion @default(PRUEBA)
-  precioMensual       Decimal           @db.Decimal(10, 2)
-  fechaInicio         DateTime          @default(now())
-  fechaProximoPago    DateTime
-  mercadopagoSubId    String?           // id de la suscripcion en Mercado Pago
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
+  id               String            @id @default(cuid())
+  barberiaId       String            @unique
+  plan             PlanSuscripcion   @default(BASICO)
+  estado           EstadoSuscripcion @default(PRUEBA)
+  precioMensual    Decimal           @db.Decimal(10, 2)
+  fechaInicio      DateTime          @default(now())
+  fechaProximoPago DateTime
+  mercadopagoSubId String? // id de la suscripcion en Mercado Pago
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
-  barberia            Barberia @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
-  pagos               PagoSuscripcion[]
+  barberia Barberia          @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
+  pagos    PagoSuscripcion[]
 
   @@map("suscripciones")
 }
@@ -218,14 +233,14 @@ enum EstadoPago {
 }
 
 model PagoSuscripcion {
-  id              String     @id @default(cuid())
-  suscripcionId   String
-  monto           Decimal    @db.Decimal(10, 2)
-  estado          EstadoPago
-  mercadopagoId   String?
-  fechaPago       DateTime   @default(now())
+  id            String     @id @default(cuid())
+  suscripcionId String
+  monto         Decimal    @db.Decimal(10, 2)
+  estado        EstadoPago
+  mercadopagoId String?
+  fechaPago     DateTime   @default(now())
 
-  suscripcion     Suscripcion @relation(fields: [suscripcionId], references: [id], onDelete: Cascade)
+  suscripcion Suscripcion @relation(fields: [suscripcionId], references: [id], onDelete: Cascade)
 
   @@map("pagos_suscripcion")
 }

@@ -12,16 +12,20 @@ const ITEMS = [
   { href: "/turnos", label: "Turnos" },
   { href: "/barberos", label: "Barberos" },
   { href: "/servicios", label: "Servicios" },
+  { href: "/clientes", label: "Clientes" },
+  { href: "/configuracion", label: "Configuración" },
 ];
 
 export function SidebarAdmin({
   slug,
   nombreBarberia,
   estadoAcceso,
+  logoUrl,
 }: {
   slug: string;
   nombreBarberia: string;
   estadoAcceso: EstadoAcceso;
+  logoUrl?: string | null;
 }) {
   const pathname = usePathname();
   const base = `/admin/${slug}`;
@@ -76,9 +80,19 @@ export function SidebarAdmin({
         )}
       >
         <div className="px-4 py-5 border-b border-brand-100 flex items-center justify-between">
-          <div className="min-w-0">
-            <p className="font-medium text-brand-900 truncate">{nombreBarberia}</p>
-            <p className="text-xs text-brand-400">Panel de administración</p>
+          <div className="min-w-0 flex items-center gap-2.5">
+            {logoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={logoUrl}
+                alt={nombreBarberia}
+                className="w-9 h-9 rounded-full object-cover border border-brand-100 shrink-0"
+              />
+            )}
+            <div className="min-w-0">
+              <p className="font-medium text-brand-900 truncate">{nombreBarberia}</p>
+              <p className="text-xs text-brand-400">Panel de administración</p>
+            </div>
           </div>
           <button
             onClick={() => setAbierto(false)}

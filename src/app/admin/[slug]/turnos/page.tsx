@@ -18,7 +18,7 @@ export default async function TurnosAdmin({
   const hasta = new Date();
   hasta.setDate(hasta.getDate() + 60);
 
-  const [turnos, barberos] = await Promise.all([
+  const [turnos, barberos, servicios] = await Promise.all([
     prisma.turno.findMany({
       where: { barberiaId: barberia.id, fecha: { gte: desde, lte: hasta } },
       include: {
@@ -32,6 +32,11 @@ export default async function TurnosAdmin({
       where: { barberiaId: barberia.id, rol: "BARBERO", activo: true },
       include: { usuario: true },
     }),
+    prisma.servicio.findMany({
+      where: { barberiaId: barberia.id, activo: true },
+      include: { barberosAsignados: { select: { barberoId: true } } },
+      orderBy: { orden: "asc" },
+    }),
   ]);
 
   const hoy = new Date().toISOString().slice(0, 10);
@@ -40,15 +45,26 @@ export default async function TurnosAdmin({
     <div>
       <h1 className="text-lg font-medium text-brand-900 mb-6">Turnos</h1>
       <ListaTurnos
+        barberiaId={barberia.id}
         fechaInicial={hoy}
         barberos={barberos.map((b) => ({ id: b.id, nombre: b.usuario.nombre }))}
+        servicios={servicios.map((s) => ({
+          id: s.id,
+          nombre: s.nombre,
+          precio: s.precio.toString(),
+          duracionMinutos: s.duracionMinutos,
+          barberoIds: s.barberosAsignados.map((bs) => bs.barberoId),
+        }))}
         turnos={turnos.map((t) => ({
           id: t.id,
           fecha: t.fecha.toISOString(),
           horaInicio: t.horaInicio,
           estado: t.estado,
           precioCobrado: t.precioCobrado.toString(),
+          duracionMinutos: t.servicio.duracionMinutos,
+          clienteId: t.clienteId,
           clienteNombre: t.cliente.nombre,
+          clienteTelefono: t.cliente.telefono,
           servicioNombre: t.servicio.nombre,
           barberoId: t.barberoId,
           barberoNombre: t.barbero.usuario.nombre,

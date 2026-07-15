@@ -5,7 +5,7 @@ export type ClasificacionCliente = "NUEVO" | "FRECUENTE" | "VIP";
 export type ClienteConMetricas = {
   clienteId: string;
   nombre: string;
-  email: string;
+  email: string | null;
   telefono: string | null;
   visitas: number; // turnos COMPLETADOS
   totalGastado: number; // suma precioCobrado de COMPLETADOS
@@ -24,8 +24,8 @@ function clasificar(visitas: number): ClasificacionCliente {
  * en esta barberia, con sus metricas agregadas (visitas, gasto, ultima
  * visita) calculadas exclusivamente sobre turnos en estado COMPLETADO.
  *
- * Los clientes sin ningun turno (es decir, MiembroBarberia con rol CLIENTE
- * pero sin Turno asociado) no se incluyen, segun lo pedido.
+ * Los Cliente sin ningun turno (no deberia pasar, ya que un Cliente solo
+ * se crea al reservar, pero se filtra por las dudas) no se incluyen.
  */
 export async function obtenerClientesConMetricas(
   barberiaId: string
@@ -50,7 +50,7 @@ export async function obtenerClientesConMetricas(
     string,
     {
       nombre: string;
-      email: string;
+      email: string | null;
       telefono: string | null;
       visitas: number;
       totalGastado: number;
@@ -128,7 +128,7 @@ export type ProximoTurnoCliente = {
 export type DetalleCliente = {
   clienteId: string;
   nombre: string;
-  email: string;
+  email: string | null;
   telefono: string | null;
   visitas: number;
   totalGastado: number;
@@ -154,7 +154,9 @@ export async function obtenerDetalleCliente(
     include: {
       servicio: { select: { nombre: true, duracionMinutos: true } },
       barbero: { include: { usuario: { select: { nombre: true } } } },
-      cliente: { select: { id: true, nombre: true, email: true, telefono: true } },
+      cliente: {
+        select: { id: true, nombre: true, email: true, telefono: true, createdAt: true },
+      },
     },
     orderBy: { fecha: "desc" },
   });
@@ -162,12 +164,8 @@ export async function obtenerDetalleCliente(
   if (turnos.length === 0) return null;
 
   const cliente = turnos[0].cliente;
-
-  // "Cliente desde": fecha en la que se vinculo como CLIENTE a esta barberia.
-  const membresia = await prisma.miembroBarberia.findUnique({
-    where: { barberiaId_usuarioId: { barberiaId, usuarioId: clienteId } },
-    select: { createdAt: true },
-  });
+  // "Cliente desde": Cliente.createdAt es la fecha de su primera reserva
+  // en esta barberia (el registro se crea la primera vez que reserva).
 
   let visitas = 0;
   let totalGastado = 0;
@@ -256,7 +254,7 @@ export async function obtenerDetalleCliente(
     visitas,
     totalGastado,
     ultimaVisita,
-    clienteDesde: membresia?.createdAt ?? null,
+    clienteDesde: cliente.createdAt,
     proximoTurno,
     clasificacion: clasificar(visitas),
     estadisticas: {

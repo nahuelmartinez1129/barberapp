@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("Creando barbería inicial (sin servicios ni barberos de ejemplo)...");
+
 
   const passwordHash = await bcrypt.hash("password123", 10);
 
@@ -41,12 +41,7 @@ async function main() {
     data: { barberiaId: barberia.id, usuarioId: dueno.id, rol: "DUENO" },
   });
 
-  console.log("");
-  console.log("Listo. La barbería arrancó sin servicios ni barberos.");
-  console.log("Iniciá sesión como dueño y creálos desde el panel:");
-  console.log("  Email:      dueno@elzorro.com");
-  console.log("  Contraseña: password123");
-  console.log(`  Panel:      /admin/${barberia.slug}`);
+
 }
 
 main()

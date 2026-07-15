@@ -4,7 +4,7 @@ export type MembresiaSesion = {
   barberiaId: string;
   barberiaSlug: string;
   barberiaNombre: string;
-  rol: "DUENO" | "BARBERO" | "CLIENTE";
+  rol: "DUENO" | "BARBERO";
   miembroId: string;
 };
 

@@ -1,9 +1,6 @@
-import { getServerSession } from "next-auth";
 import { prisma } from "@/lib/prisma";
-import { authOptions } from "@/lib/auth";
 import { verificarAccesoBarberia } from "@/lib/suscripcion";
 import { ReservaWizard } from "@/components/ReservaWizard";
-import { VistaReservaCliente } from "@/components/VistaReservaCliente";
 import { notFound } from "next/navigation";
 
 export default async function PaginaReserva({
@@ -50,43 +47,9 @@ export default async function PaginaReserva({
     },
   });
 
-  const session = await getServerSession(authOptions);
-
-  let turnosCliente: {
-    id: string;
-    fecha: string;
-    horaInicio: string;
-    estado: string;
-    precioCobrado: string;
-    servicioNombre: string;
-    barberoNombre: string;
-  }[] = [];
-
-  if (session?.user) {
-    const turnos = await prisma.turno.findMany({
-      where: { barberiaId: barberia.id, clienteId: session.user.id },
-      include: { servicio: true, barbero: { include: { usuario: true } } },
-      orderBy: { fecha: "desc" },
-    });
-
-    turnosCliente = turnos.map((t) => ({
-      id: t.id,
-      fecha: t.fecha.toISOString(),
-      horaInicio: t.horaInicio,
-      estado: t.estado,
-      precioCobrado: t.precioCobrado.toString(),
-      servicioNombre: t.servicio.nombre,
-      barberoNombre: t.barbero.usuario.nombre,
-    }));
-  }
-
   return (
     <div className="min-h-screen bg-brand-50 py-8 px-4">
-      <VistaReservaCliente
-        haySesion={!!session?.user}
-        turnosCliente={turnosCliente}
-        wizard={<ReservaWizard barberia={barberia} servicios={servicios} />}
-      />
+      <ReservaWizard barberia={barberia} servicios={servicios} />
     </div>
   );
 }

@@ -3,6 +3,9 @@
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { requireSuscripcionActiva } from "@/lib/actions/guards/requireSuscripcionActiva";
+import { requireSuscripcionBarbero } from "@/lib/actions/guards/requireSuscripcionBarbero";
+
 
 const esquemaBarbero = z.object({
   barberiaId: z.string(),
@@ -12,53 +15,73 @@ const esquemaBarbero = z.object({
   colorAgenda: z.string().default("#3b82f6"),
 });
 
-export async function crearBarbero(input: z.infer<typeof esquemaBarbero>) {
+export async function crearBarbero(
+  input: z.infer<typeof esquemaBarbero>
+) {
   const datos = esquemaBarbero.parse(input);
 
+  await requireSuscripcionActiva(
+    datos.barberiaId
+  );
+
   const existente = await prisma.usuario.findUnique({
-    where: { email: datos.email },
+    where: {
+      email: datos.email,
+    },
   });
 
   if (existente) {
-    throw new Error("Ya existe un usuario registrado con ese email.");
+    throw new Error(
+      "Ya existe un usuario registrado con ese email."
+    );
   }
 
-  // Password temporal: el barbero la cambia en su primer ingreso (a implementar despues)
-  const passwordTemporal = Math.random().toString(36).slice(-8);
-  const passwordHash = await bcrypt.hash(passwordTemporal, 10);
+  // Password temporal: el barbero la cambia en su primer ingreso.
+  const passwordTemporal = Math.random()
+    .toString(36)
+    .slice(-8);
 
-  const usuario = await prisma.usuario.create({
-    data: {
-      nombre: datos.nombre,
-      email: datos.email,
-      telefono: datos.telefono,
-      passwordHash,
-    },
-  });
+  const passwordHash = await bcrypt.hash(
+    passwordTemporal,
+    10
+  );
 
-  const miembro = await prisma.miembroBarberia.create({
-    data: {
-      barberiaId: datos.barberiaId,
-      usuarioId: usuario.id,
-      rol: "BARBERO",
-      colorAgenda: datos.colorAgenda,
-    },
-  });
-
-  // Horario de atencion default: lunes a sabado, 9 a 19hs.
-  // El dueño lo puede ajustar despues desde el panel.
-  for (let dia = 0; dia <= 6; dia++) {
-    await prisma.horarioAtencion.create({
+  return prisma.$transaction(async (tx) => {
+    const usuario = await tx.usuario.create({
       data: {
-        barberoId: miembro.id,
-        diaSemana: dia,
-        horaInicio: "09:00",
-        horaFin: "19:00",
+        nombre: datos.nombre,
+        email: datos.email,
+        telefono: datos.telefono,
+        passwordHash,
       },
     });
-  }
 
-  return { miembro, passwordTemporal };
+    const miembro = await tx.miembroBarberia.create({
+      data: {
+        barberiaId: datos.barberiaId,
+        usuarioId: usuario.id,
+        rol: "BARBERO",
+        colorAgenda: datos.colorAgenda,
+      },
+    });
+
+    // Horario por defecto
+    for (let dia = 0; dia <= 6; dia++) {
+      await tx.horarioAtencion.create({
+        data: {
+          barberoId: miembro.id,
+          diaSemana: dia,
+          horaInicio: "09:00",
+          horaFin: "19:00",
+        },
+      });
+    }
+
+    return {
+      miembro,
+      passwordTemporal,
+    };
+  });
 }
 
 const esquemaEdicionBarbero = z.object({
@@ -68,28 +91,64 @@ const esquemaEdicionBarbero = z.object({
   colorAgenda: z.string(),
 });
 
-export async function editarBarbero(input: z.infer<typeof esquemaEdicionBarbero>) {
+export async function editarBarbero(
+  input: z.infer<typeof esquemaEdicionBarbero>
+) {
   const datos = esquemaEdicionBarbero.parse(input);
 
+  await requireSuscripcionBarbero(
+    datos.miembroId
+  );
+
   const miembro = await prisma.miembroBarberia.findUnique({
-    where: { id: datos.miembroId },
+    where: {
+      id: datos.miembroId,
+    },
+    select: {
+      usuarioId: true,
+    },
   });
-  if (!miembro) throw new Error("Barbero no encontrado.");
 
-  await prisma.usuario.update({
-    where: { id: miembro.usuarioId },
-    data: { nombre: datos.nombre, telefono: datos.telefono },
-  });
+  if (!miembro) {
+    throw new Error("Barbero no encontrado.");
+  }
 
-  return prisma.miembroBarberia.update({
-    where: { id: datos.miembroId },
-    data: { colorAgenda: datos.colorAgenda },
+  return prisma.$transaction(async (tx) => {
+    await tx.usuario.update({
+      where: {
+        id: miembro.usuarioId,
+      },
+      data: {
+        nombre: datos.nombre,
+        telefono: datos.telefono,
+      },
+    });
+
+    return tx.miembroBarberia.update({
+      where: {
+        id: datos.miembroId,
+      },
+      data: {
+        colorAgenda: datos.colorAgenda,
+      },
+    });
   });
 }
+export async function actualizarEstadoBarbero(
+  miembroId: string,
+  activo: boolean
+) {
 
-export async function actualizarEstadoBarbero(miembroId: string, activo: boolean) {
+  await requireSuscripcionBarbero(
+    miembroId
+  );
+
   return prisma.miembroBarberia.update({
-    where: { id: miembroId },
-    data: { activo },
+    where: {
+      id: miembroId,
+    },
+    data: {
+      activo,
+    },
   });
 }

@@ -1,55 +1,131 @@
-import { getServerSession } from "next-auth";
-import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { AgendaBarbero } from "@/components/AgendaBarbero";
+import Link from "next/link";
 
-export default async function PaginaBarbero({
+import { prisma } from "@/lib/prisma";
+
+import { FormularioBarbero } from "@/components/FormularioBarbero";
+import { TarjetaBarbero } from "@/components/TarjetaBarbero";
+import { ProteccionSuscripcion } from "@/components/admin/ProteccionSuscripcion";
+
+import { requirePaginaAdministracion } from "@/lib/actions/guards/requirePaginaAdministracion";
+
+export default async function BarberosAdmin({
   params,
 }: {
-  params: { slug: string };
+  params: {
+    slug: string;
+  };
 }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) redirect("/login");
-
-  const membresia = session.user.membresias.find(
-    (m) => m.barberiaSlug === params.slug && m.rol === "BARBERO"
-  );
-  if (!membresia) redirect("/panel");
-
-  const hoy = new Date();
-  const inicioDelDia = new Date(hoy);
-  inicioDelDia.setHours(0, 0, 0, 0);
-  const finDelDia = new Date(hoy);
-  finDelDia.setHours(23, 59, 59, 999);
-
-  const turnosHoy = await prisma.turno.findMany({
+  const barberia = await prisma.barberia.findUnique({
     where: {
-      barberoId: membresia.miembroId,
-      fecha: { gte: inicioDelDia, lte: finDelDia },
-      estado: { not: "CANCELADO" },
+      slug: params.slug,
     },
-    include: { cliente: true, servicio: true },
-    orderBy: { horaInicio: "asc" },
   });
 
-  return (
-    <div className="min-h-screen bg-brand-50 py-6 px-4">
-      <AgendaBarbero
-        barberiaId={membresia.barberiaId}
-        barberoId={membresia.miembroId}
-        nombreBarbero={session.user.name ?? ""}
-        turnos={turnosHoy.map((t) => ({
-          id: t.id,
-          fecha: t.fecha.toISOString().slice(0, 10),
-          horaInicio: t.horaInicio,
-          clienteNombre: t.cliente.nombre,
-          servicioNombre: t.servicio.nombre,
-          duracionMinutos: t.servicio.duracionMinutos,
-          precio: t.precioCobrado.toString(),
-          estado: t.estado,
-        }))}
+  if (!barberia) {
+    return null;
+  }
+
+  const acceso =
+    await requirePaginaAdministracion(
+      barberia.id
+    );
+
+  if (!acceso.permitida) {
+    return (
+      <ProteccionSuscripcion
+        acceso={acceso}
+        slug={params.slug}
       />
+    );
+  }
+
+  const barberos =
+    await prisma.miembroBarberia.findMany({
+      where: {
+        barberiaId: barberia.id,
+        rol: "BARBERO",
+      },
+      include: {
+        usuario: true,
+        serviciosAsignados: {
+          include: {
+            servicio: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+    });
+
+  return (
+    <div>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-lg font-medium text-brand-900">
+          Barberos
+        </h1>
+
+        <Link
+          href={`/admin/${params.slug}/configuracion`}
+          className="text-sm text-accent-600 hover:underline"
+        >
+          Configurar horarios →
+        </Link>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="order-2 space-y-2 lg:order-1">
+          {barberos.length === 0 && (
+            <p className="text-sm text-brand-400">
+              Todavía no agregaste ningún
+              barbero. Usá el formulario para
+              crear el primero.
+            </p>
+          )}
+
+          {barberos.map((b) => (
+            <TarjetaBarbero
+              key={b.id}
+              barberiaId={barberia.id}
+              barbero={{
+                id: b.id,
+                activo: b.activo,
+                colorAgenda:
+                  b.colorAgenda ??
+                  "#3b82f6",
+
+                usuario: {
+                  nombre:
+                    b.usuario.nombre,
+                  email:
+                    b.usuario.email,
+                  telefono:
+                    b.usuario.telefono,
+                },
+
+                serviciosAsignados:
+                  b.serviciosAsignados.map(
+                    (bs) => ({
+                      id: bs.id,
+
+                      servicio: {
+                        nombre:
+                          bs.servicio
+                            .nombre,
+                      },
+                    })
+                  ),
+              }}
+            />
+          ))}
+        </div>
+
+        <div className="order-1 lg:order-2">
+          <FormularioBarbero
+            barberiaId={barberia.id}
+          />
+        </div>
+      </div>
     </div>
   );
 }

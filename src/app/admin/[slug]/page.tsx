@@ -1,22 +1,11 @@
+import { DashboardResumen } from "@/components/dashboard/DashboardResumen";
+import { OnboardingPanel } from "@/components/onboarding/OnboardingPanel";
+import { ProteccionSuscripcion } from "@/components/admin/ProteccionSuscripcion";
+
+import { requirePaginaAdministracion } from "@/lib/actions/guards/requirePaginaAdministracion";
+
 import { prisma } from "@/lib/prisma";
-import { formatearMoneda, formatearFecha, iniciales } from "@/lib/utils";
-import { cn } from "@/lib/utils";
-
-const ESTILO_ESTADO: Record<string, string> = {
-  CONFIRMADO: "bg-success-50 text-success-700",
-  PENDIENTE: "bg-warning-50 text-warning-700",
-  COMPLETADO: "bg-brand-100 text-brand-600",
-  CANCELADO: "bg-danger-50 text-danger-700",
-  NO_ASISTIO: "bg-danger-50 text-danger-700",
-};
-
-const ETIQUETA_ESTADO: Record<string, string> = {
-  CONFIRMADO: "Confirmado",
-  PENDIENTE: "Pendiente",
-  COMPLETADO: "Completado",
-  CANCELADO: "Cancelado",
-  NO_ASISTIO: "No asistió",
-};
+import { formatearMoneda } from "@/lib/utils";
 
 export default async function ResumenAdmin({
   params,
@@ -24,108 +13,182 @@ export default async function ResumenAdmin({
   params: { slug: string };
 }) {
   const barberia = await prisma.barberia.findUnique({
-    where: { slug: params.slug },
+    where: {
+      slug: params.slug,
+    },
   });
-  if (!barberia) return null;
+
+  if (!barberia) {
+    return null;
+  }
+
+  const acceso =
+    await requirePaginaAdministracion(
+      barberia.id
+    );
+
+  if (!acceso.permitida) {
+    return (
+      <ProteccionSuscripcion
+        acceso={acceso}
+        slug={params.slug}
+      />
+    );
+  }
 
   const hoy = new Date();
-  const inicioDelDia = new Date(hoy);
-  inicioDelDia.setHours(0, 0, 0, 0);
-  const finDelDia = new Date(hoy);
-  finDelDia.setHours(23, 59, 59, 999);
 
-  const inicioDelMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const hoyStr =
+    hoy.toISOString().slice(0, 10);
 
-  const [turnosHoy, turnosDelMes, clientesNuevosDelMes] = await Promise.all([
+  const inicioDelMes = new Date(
+    hoy.getFullYear(),
+    hoy.getMonth(),
+    1
+  );
+
+  const [
+    todosLosTurnosRecientes,
+    clientesNuevosDelMes,
+    cantidadBarberos,
+    cantidadServicios,
+    horariosActivos,
+  ] = await Promise.all([
     prisma.turno.findMany({
-      where: { barberiaId: barberia.id, fecha: { gte: inicioDelDia, lte: finDelDia } },
+      where: {
+        barberiaId: barberia.id,
+        fecha: {
+          gte: inicioDelMes,
+        },
+      },
       include: {
         cliente: true,
         servicio: true,
-        barbero: { include: { usuario: true } },
+        barbero: {
+          include: {
+            usuario: true,
+          },
+        },
       },
-      orderBy: { horaInicio: "asc" },
+      orderBy: {
+        horaInicio: "asc",
+      },
     }),
-    prisma.turno.findMany({
+
+    prisma.cliente.count({
       where: {
         barberiaId: barberia.id,
-        fecha: { gte: inicioDelMes },
-        estado: "COMPLETADO",
-      },
-      select: {
-        precioCobrado: true,
+        createdAt: {
+          gte: inicioDelMes,
+        },
       },
     }),
+
     prisma.miembroBarberia.count({
       where: {
         barberiaId: barberia.id,
-        rol: "CLIENTE",
-        createdAt: { gte: inicioDelMes },
+        rol: "BARBERO",
+        activo: true,
+      },
+    }),
+
+    prisma.servicio.count({
+      where: {
+        barberiaId: barberia.id,
+      },
+    }),
+
+    prisma.horarioBarberia.count({
+      where: {
+        barberiaId: barberia.id,
+        activo: true,
       },
     }),
   ]);
 
-  const ingresosDelMes = turnosDelMes.reduce(
-    (acc, t) => acc + parseFloat(t.precioCobrado.toString()),
-    0
-  );
+  const turnosHoy =
+    todosLosTurnosRecientes.filter(
+      (t) =>
+        t.fecha
+          .toISOString()
+          .slice(0, 10) === hoyStr
+    );
+
+  const turnosDelMes =
+    todosLosTurnosRecientes.filter((t) =>
+      [
+        "COMPLETADO",
+        "CONFIRMADO",
+        "PENDIENTE",
+      ].includes(t.estado)
+    );
+
+  const ingresosDelMes =
+    turnosDelMes.reduce(
+      (acc, t) =>
+        acc +
+        parseFloat(
+          t.precioCobrado.toString()
+        ),
+      0
+    );
 
   const metricas = [
-    { label: "Turnos hoy", valor: turnosHoy.length.toString() },
-    { label: "Ingresos del mes", valor: formatearMoneda(ingresosDelMes) },
-    { label: "Clientes nuevos", valor: clientesNuevosDelMes.toString() },
+    {
+      label: "Turnos hoy",
+      valor: turnosHoy.length.toString(),
+    },
+    {
+      label: "Ingresos del mes",
+      valor: formatearMoneda(
+        ingresosDelMes
+      ),
+    },
+    {
+      label: "Clientes nuevos",
+      valor:
+        clientesNuevosDelMes.toString(),
+    },
     {
       label: "Completados hoy",
-      valor: turnosHoy.filter((t) => t.estado === "COMPLETADO").length.toString(),
+      valor: turnosHoy
+        .filter(
+          (t) =>
+            t.estado ===
+            "COMPLETADO"
+        )
+        .length.toString(),
     },
   ];
 
+  const onboardingCompleto =
+    cantidadBarberos > 0 &&
+    cantidadServicios > 0 &&
+    barberia.horariosConfigurados;
+
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 mb-6">
-        <h1 className="text-lg font-medium text-brand-900">Resumen de hoy</h1>
-        <span className="text-sm text-brand-400 capitalize">
-          {formatearFecha(hoy)}
-        </span>
-      </div>
+    <div className="space-y-8">
+      {!onboardingCompleto && (
+        <OnboardingPanel
+          slug={params.slug}
+          cantidadBarberos={
+            cantidadBarberos
+          }
+          cantidadServicios={
+            cantidadServicios
+          }
+          horariosConfigurados={
+            barberia.horariosConfigurados
+          }
+        />
+      )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
-        {metricas.map((m) => (
-          <div key={m.label} className="bg-white border border-brand-100 rounded-md p-4">
-            <p className="text-xs text-brand-400 mb-1">{m.label}</p>
-            <p className="text-2xl font-medium text-brand-900">{m.valor}</p>
-          </div>
-        ))}
-      </div>
-
-      <h2 className="text-sm font-medium text-brand-700 mb-3">Agenda de hoy</h2>
-      <div className="space-y-2">
-        {turnosHoy.length === 0 && (
-          <p className="text-sm text-brand-400">No hay turnos para hoy.</p>
-        )}
-        {turnosHoy.map((turno) => (
-          <div
-            key={turno.id}
-            className="flex items-center gap-3 bg-white border border-brand-100 rounded-md px-4 py-3"
-          >
-            <span className="text-sm text-brand-400 w-12 shrink-0">{turno.horaInicio}</span>
-            <div className="w-7 h-7 rounded-full bg-brand-100 flex items-center justify-center text-[11px] font-medium text-brand-600 shrink-0">
-              {iniciales(turno.barbero.usuario.nombre)}
-            </div>
-            <span className="text-sm text-brand-900 flex-1 truncate">
-              {turno.cliente.nombre} · {turno.servicio.nombre}
-            </span>
-            <span
-              className={cn(
-                "badge shrink-0",
-                ESTILO_ESTADO[turno.estado]
-              )}
-            >
-              {ETIQUETA_ESTADO[turno.estado]}
-            </span>
-          </div>
-        ))}
-      </div>
+      <DashboardResumen
+        slug={params.slug}
+        hoy={hoy}
+        metricas={metricas}
+        turnosHoy={turnosHoy}
+      />
     </div>
   );
 }

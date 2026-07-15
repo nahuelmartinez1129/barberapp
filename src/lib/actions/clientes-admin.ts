@@ -1,48 +1,76 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
-import bcrypt from "bcryptjs";
+import { buscarOCrearCliente } from "@/lib/actions/clientes";
 import { z } from "zod";
+
+import { requireSession } from "@/lib/auth/requireSession";
+import { requireBarberiaDelDueno } from "@/lib/actions/guards/requireBarberiaDelDueno";
+import { requireSuscripcionActiva } from "@/lib/actions/guards/requireSuscripcionActiva";
 
 export type ClienteBusqueda = {
   id: string;
   nombre: string;
-  email: string;
+  email: string | null;
   telefono: string | null;
 };
 
 /**
- * Busca clientes YA VINCULADOS a esta barberia (MiembroBarberia rol
- * CLIENTE) por nombre, email o telefono. Se usa desde el modal de
- * "Nuevo turno" para que el dueño pueda elegir un cliente existente sin
- * tener que recordar el email exacto.
+ * Busca clientes de esta barberia (modelo Cliente, sin autenticacion)
+ * por nombre, email o telefono. Se usa desde el modal de "Nuevo turno"
+ * para que el dueño pueda elegir un cliente existente.
  */
 export async function buscarClientesBarberia(
   barberiaId: string,
   termino: string
 ): Promise<ClienteBusqueda[]> {
-  const miembros = await prisma.miembroBarberia.findMany({
-    where: {
-      barberiaId,
-      rol: "CLIENTE",
-      usuario: {
-        OR: [
-          { nombre: { contains: termino, mode: "insensitive" } },
-          { email: { contains: termino, mode: "insensitive" } },
-          { telefono: { contains: termino, mode: "insensitive" } },
-        ],
-      },
-    },
-    include: { usuario: true },
-    take: 10,
-    orderBy: { usuario: { nombre: "asc" } },
+
+  const session = await requireSession();
+
+  const barberia = await requireBarberiaDelDueno({
+    usuarioId: session.user.id,
+    barberiaId,
   });
 
-  return miembros.map((m) => ({
-    id: m.usuario.id,
-    nombre: m.usuario.nombre,
-    email: m.usuario.email,
-    telefono: m.usuario.telefono,
+  await requireSuscripcionActiva(
+    barberia.id
+  );
+
+  const clientes = await prisma.cliente.findMany({
+    where: {
+      barberiaId,
+      OR: [
+        {
+          nombre: {
+            contains: termino,
+            mode: "insensitive",
+          },
+        },
+        {
+          email: {
+            contains: termino,
+            mode: "insensitive",
+          },
+        },
+        {
+          telefono: {
+            contains: termino,
+            mode: "insensitive",
+          },
+        },
+      ],
+    },
+    take: 10,
+    orderBy: {
+      nombre: "asc",
+    },
+  });
+
+  return clientes.map((c) => ({
+    id: c.id,
+    nombre: c.nombre,
+    email: c.email,
+    telefono: c.telefono,
   }));
 }
 
@@ -54,52 +82,39 @@ const esquemaClienteNuevo = z.object({
 });
 
 /**
- * Crea un cliente nuevo desde el panel admin (turno manual sin reserva
- * online previa). Sigue el mismo patron que crearBarbero: genera un
- * password temporal (el cliente no necesita usarlo de inmediato, ya que
- * el dueño es quien esta creando el turno por el).
- *
- * Si no se provee email, se genera uno interno unico para no romper la
- * restriccion de unicidad de Usuario.email, ya que muchos clientes que
- * el dueño anota a mano no tienen email a mano en el momento.
+ * Crea (o reutiliza, si el telefono ya existe en esta barberia) un
+ * cliente desde el panel admin, para el alta manual de turno. Reutiliza
+ * EXACTAMENTE la misma logica de busqueda/creacion que usa la reserva
+ * publica (buscarOCrearCliente) — no se duplica nada. Ya no se crea
+ * Usuario ni password: los clientes no se autentican.
  */
 export async function crearClienteManual(
   input: z.infer<typeof esquemaClienteNuevo>
 ): Promise<ClienteBusqueda> {
   const datos = esquemaClienteNuevo.parse(input);
 
-  const email =
-    datos.email ?? `cliente-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@sin-email.local`;
+const session = await requireSession();
 
-  const existente = await prisma.usuario.findUnique({ where: { email } });
-  if (existente) {
-    throw new Error("Ya existe un usuario registrado con ese email.");
-  }
+const barberia = await requireBarberiaDelDueno({
+  usuarioId: session.user.id,
+  barberiaId: datos.barberiaId,
+});
 
-  const passwordTemporal = Math.random().toString(36).slice(-8);
-  const passwordHash = await bcrypt.hash(passwordTemporal, 10);
+await requireSuscripcionActiva(
+  barberia.id
+);
 
-  const usuario = await prisma.usuario.create({
-    data: {
-      nombre: datos.nombre,
-      email,
-      telefono: datos.telefono,
-      passwordHash,
-    },
-  });
-
-  await prisma.miembroBarberia.create({
-    data: {
-      barberiaId: datos.barberiaId,
-      usuarioId: usuario.id,
-      rol: "CLIENTE",
-    },
+const cliente = await buscarOCrearCliente({
+    barberiaId: datos.barberiaId,
+    nombre: datos.nombre,
+    telefono: datos.telefono,
+    email: datos.email,
   });
 
   return {
-    id: usuario.id,
-    nombre: usuario.nombre,
-    email: usuario.email,
-    telefono: usuario.telefono,
+    id: cliente.id,
+    nombre: cliente.nombre,
+    email: cliente.email,
+    telefono: cliente.telefono,
   };
 }

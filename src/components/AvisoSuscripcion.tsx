@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { EstadoAcceso } from "@/lib/suscripcion";
+import type { EstadoAcceso } from "@/types/estado-acceso";
 
 export function AvisoSuscripcion({
   estadoAcceso,

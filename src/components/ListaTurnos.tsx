@@ -66,6 +66,10 @@ export function ListaTurnos({
   servicios: ServicioParaModal[];
   fechaInicial: string;
 }) {
+
+
+
+
   const router = useRouter();
   const [fecha, setFecha] = useState(fechaInicial);
   const [barberoId, setBarberoId] = useState("todos");
@@ -74,13 +78,22 @@ export function ListaTurnos({
   const [turnoAReprogramar, setTurnoAReprogramar] = useState<Turno | null>(null);
   const [clienteVisto, setClienteVisto] = useState<string | null>(null);
 
-  const turnosFiltrados = useMemo(() => {
-    return turnos.filter((t) => {
-      const coincideFecha = t.fecha.slice(0, 10) === fecha;
-      const coincideBarbero = barberoId === "todos" || t.barberoId === barberoId;
-      return coincideFecha && coincideBarbero;
-    });
-  }, [turnos, fecha, barberoId]);
+
+const turnosFiltrados = useMemo(() => {
+  
+
+  return turnos.filter((t) => {
+    const fechaTurno = t.fecha.slice(0, 10);
+
+  
+
+    const coincideFecha = fechaTurno === fecha;
+    const coincideBarbero =
+      barberoId === "todos" || t.barberoId === barberoId;
+
+    return coincideFecha && coincideBarbero;
+  });
+}, [turnos, fecha, barberoId]);
 
   async function actualizar(turnoId: string, estado: string) {
     setActualizandoId(turnoId);

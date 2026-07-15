@@ -3,13 +3,35 @@
 import { prisma } from "@/lib/prisma";
 import type { EstadoTurno } from "@prisma/client";
 import { verificarSlotLibre } from "@/lib/disponibilidad";
-import { crearTurno } from "@/lib/actions/turnos";
+import { crearTurnoAdmin } from "@/lib/actions/turnos";
 import { z } from "zod";
 
-export async function cambiarEstadoTurno(turnoId: string, estado: EstadoTurno) {
+import { requireSession } from "@/lib/auth/requireSession";
+import { requireTurnoDelDueno } from "@/lib/actions/guards/requireTurnoDelDueno";
+import { requireSuscripcionActiva } from "@/lib/actions/guards/requireSuscripcionActiva";
+
+export async function cambiarEstadoTurno(
+  turnoId: string,
+  estado: EstadoTurno
+) {
+  const session = await requireSession();
+
+  const turno = await requireTurnoDelDueno({
+    usuarioId: session.user.id,
+    turnoId,
+  });
+
+  await requireSuscripcionActiva(
+    turno.barberia.id
+  );
+
   return prisma.turno.update({
-    where: { id: turnoId },
-    data: { estado },
+    where: {
+      id: turnoId,
+    },
+    data: {
+      estado,
+    },
   });
 }
 
@@ -31,9 +53,12 @@ const esquemaTurnoManual = z.object({
  * verificarSlotLibre), para no duplicar la logica de creacion de turnos.
  * El estado inicial sigue siendo PENDIENTE, igual que una reserva online.
  */
-export async function crearTurnoManual(input: z.infer<typeof esquemaTurnoManual>) {
+export async function crearTurnoManual(
+  input: z.infer<typeof esquemaTurnoManual>
+) {
   const datos = esquemaTurnoManual.parse(input);
-  return crearTurno(datos);
+
+  return crearTurnoAdmin(datos);
 }
 
 const esquemaReprogramar = z.object({
@@ -65,16 +90,28 @@ function sumarMinutos(hora: string, minutos: number): string {
  * componente que llama a esta action simplemente no manda barberoId).
  */
 export async function reprogramarTurno(input: z.infer<typeof esquemaReprogramar>) {
-  const datos = esquemaReprogramar.parse(input);
+const datos = esquemaReprogramar.parse(input);
 
-  const turnoActual = await prisma.turno.findUnique({ where: { id: datos.turnoId } });
-  if (!turnoActual) {
-    throw new Error("El turno no existe.");
-  }
+const session = await requireSession();
 
-  const barberoId = datos.barberoId ?? turnoActual.barberoId;
-  const fecha = new Date(datos.fecha);
-  const horaFin = sumarMinutos(datos.horaInicio, datos.duracionMinutos);
+const turno = await requireTurnoDelDueno({
+  usuarioId: session.user.id,
+  turnoId: datos.turnoId,
+});
+
+await requireSuscripcionActiva(
+  turno.barberia.id
+);
+
+const barberoId =
+  datos.barberoId ?? turno.barberoId;
+
+const fecha = new Date(datos.fecha);
+
+const horaFin = sumarMinutos(
+  datos.horaInicio,
+  datos.duracionMinutos
+);
 
   const libre = await verificarSlotLibre({
     barberoId,
@@ -88,13 +125,15 @@ export async function reprogramarTurno(input: z.infer<typeof esquemaReprogramar>
     throw new Error("Ese horario ya no está disponible. Elegí otro.");
   }
 
-  return prisma.turno.update({
-    where: { id: datos.turnoId },
-    data: {
-      barberoId,
-      fecha,
-      horaInicio: datos.horaInicio,
-      horaFin,
-    },
-  });
+return prisma.turno.update({
+  where: {
+    id: datos.turnoId,
+  },
+  data: {
+    barberoId,
+    fecha,
+    horaInicio: datos.horaInicio,
+    horaFin,
+  },
+});
 }

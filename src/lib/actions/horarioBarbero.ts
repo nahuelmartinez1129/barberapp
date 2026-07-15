@@ -3,6 +3,8 @@
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
+import { requireSuscripcionBarbero } from "@/lib/actions/guards/requireSuscripcionBarbero";
+
 const esquemaDia = z.object({
   diaSemana: z.number().int().min(0).max(6),
   activo: z.boolean(),
@@ -20,6 +22,10 @@ export async function guardarHorarioBarbero(
 ) {
   const datos = esquemaGuardarHorarioBarbero.parse(input);
 
+  await requireSuscripcionBarbero(
+    datos.barberoId
+);
+
   for (const dia of datos.dias) {
     if (dia.activo && dia.horaInicio >= dia.horaFin) {
       throw new Error(
@@ -28,7 +34,7 @@ export async function guardarHorarioBarbero(
     }
   }
 
-  console.log(datos.dias);
+  
   await prisma.$transaction(
     datos.dias.map((dia) =>
       prisma.horarioAtencion.upsert({

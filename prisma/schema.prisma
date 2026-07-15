@@ -13,21 +13,25 @@ datasource db {
 // ============= TENANT =============
 
 model Barberia {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   nombre      String
-  slug        String   @unique // usado en la url publica: /reservar/[slug]
+  slug        String  @unique // usado en la url publica: /reservar/[slug]
   telefono    String?
   direccion   String?
   logoUrl     String?
-  zonaHoraria String   @default("America/Argentina/Buenos_Aires")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  zonaHoraria String  @default("America/Argentina/Buenos_Aires")
+
+  horariosConfigurados Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   miembros    MiembroBarberia[]
   servicios   Servicio[]
   turnos      Turno[]
   suscripcion Suscripcion?
   horarios    HorarioBarberia[]
+  clientes    Cliente[]
 
   @@map("barberias")
 }
@@ -42,7 +46,6 @@ enum RolGlobal {
 enum RolBarberia {
   DUENO
   BARBERO
-  CLIENTE
 }
 
 model Usuario {
@@ -55,8 +58,10 @@ model Usuario {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  membresias        MiembroBarberia[]
-  turnosComoCliente Turno[]           @relation("TurnosCliente")
+  // Usuario es exclusivamente para roles autenticados via NextAuth:
+  // DUENO y BARBERO. Los clientes finales NO son Usuario (ver modelo
+  // Cliente más abajo) — no requieren login ni password.
+  membresias MiembroBarberia[]
 
   @@map("usuarios")
 }
@@ -117,6 +122,31 @@ model BarberoServicio {
   @@map("barbero_servicios")
 }
 
+// ============= CLIENTES (sin autenticacion) =============
+
+// Un Cliente NO es un Usuario: no tiene password, no inicia sesion, no
+// pasa por NextAuth. Se identifica de forma unica dentro de cada
+// barberia por su telefono. Si el mismo telefono reserva de nuevo en la
+// misma barberia, se reutiliza el mismo registro (acumula historial);
+// si reserva en OTRA barberia, se crea un Cliente distinto, porque cada
+// barberia es un tenant independiente.
+model Cliente {
+  id            String   @id @default(cuid())
+  barberiaId    String
+  nombre        String
+  telefono      String
+  email         String?
+  observaciones String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  barberia Barberia @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
+  turnos   Turno[]  @relation("TurnosCliente")
+
+  @@unique([barberiaId, telefono])
+  @@map("clientes")
+}
+
 // ============= TURNOS =============
 
 enum EstadoTurno {
@@ -131,7 +161,7 @@ model Turno {
   id            String      @id @default(cuid())
   barberiaId    String
   barberoId     String // MiembroBarberia.id
-  clienteId     String // Usuario.id
+  clienteId     String // Cliente.id (NO Usuario - los clientes no se autentican)
   servicioId    String
   fecha         DateTime    @db.Date
   horaInicio    String // formato "HH:mm"
@@ -144,7 +174,7 @@ model Turno {
 
   barberia Barberia        @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
   barbero  MiembroBarberia @relation("TurnosBarbero", fields: [barberoId], references: [id])
-  cliente  Usuario         @relation("TurnosCliente", fields: [clienteId], references: [id])
+  cliente  Cliente         @relation("TurnosCliente", fields: [clienteId], references: [id])
   servicio Servicio        @relation(fields: [servicioId], references: [id])
 
   @@index([barberiaId, fecha])
@@ -179,13 +209,17 @@ model HorarioAtencion {
   @@map("horarios_atencion")
 }
 
+// Horario general de atencion de la BARBERIA (no del barbero individual).
+// Actua como restriccion adicional: un turno solo es valido si cae dentro
+// del horario de la barberia Y dentro del horario del barbero asignado.
+// Un registro por dia de la semana (0 = domingo, 6 = sabado).
 model HorarioBarberia {
   id         String  @id @default(cuid())
   barberiaId String
-  diaSemana  Int
+  diaSemana  Int // 0 = domingo, 6 = sabado
   activo     Boolean @default(true)
-  horaInicio String
-  horaFin    String
+  horaInicio String // formato "HH:mm"
+  horaFin    String // formato "HH:mm"
 
   barberia Barberia @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
 
@@ -209,16 +243,22 @@ enum EstadoSuscripcion {
 }
 
 model Suscripcion {
-  id               String            @id @default(cuid())
-  barberiaId       String            @unique
-  plan             PlanSuscripcion   @default(BASICO)
-  estado           EstadoSuscripcion @default(PRUEBA)
-  precioMensual    Decimal           @db.Decimal(10, 2)
-  fechaInicio      DateTime          @default(now())
-  fechaProximoPago DateTime
-  mercadopagoSubId String? // id de la suscripcion en Mercado Pago
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  id                        String            @id @default(cuid())
+  barberiaId                String            @unique
+  plan                      PlanSuscripcion   @default(BASICO)
+  estado                    EstadoSuscripcion @default(PRUEBA)
+  precioMensual             Decimal           @db.Decimal(10, 2)
+  fechaInicio               DateTime          @default(now())
+  fechaProximoPago          DateTime
+  cancelarAlFinalDelPeriodo Boolean           @default(false)
+ mercadopagoSubId String? @unique // id de la suscripción en Mercado Pago
+  checkoutUrl              String?
+
+  fechaUltimaSincronizacion DateTime?
+
+  ultimaRespuestaMP        Json?
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
 
   barberia Barberia          @relation(fields: [barberiaId], references: [id], onDelete: Cascade)
   pagos    PagoSuscripcion[]
@@ -227,20 +267,46 @@ model Suscripcion {
 }
 
 enum EstadoPago {
+  PENDIENTE
   APROBADO
   RECHAZADO
-  PENDIENTE
+  REEMBOLSADO
 }
 
 model PagoSuscripcion {
-  id            String     @id @default(cuid())
+  id String @id @default(cuid())
+
   suscripcionId String
-  monto         Decimal    @db.Decimal(10, 2)
-  estado        EstadoPago
+
+  monto Decimal @db.Decimal(10, 2)
+
+  moneda String @default("ARS")
+
+  estado EstadoPago
+
   mercadopagoId String?
-  fechaPago     DateTime   @default(now())
+
+  descripcion String?
+
+  fechaPago DateTime @default(now())
+
+  createdAt DateTime @default(now())
 
   suscripcion Suscripcion @relation(fields: [suscripcionId], references: [id], onDelete: Cascade)
 
+  @@index([suscripcionId])
   @@map("pagos_suscripcion")
+}
+
+model ConfiguracionSistema {
+  id String @id @default(cuid())
+
+  planBasicoMercadoPagoId String?
+  planProMercadoPagoId String?
+  planPremiumMercadoPagoId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("configuracion_sistema")
 }

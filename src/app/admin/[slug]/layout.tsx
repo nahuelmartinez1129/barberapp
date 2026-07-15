@@ -1,54 +1,64 @@
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
+
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { verificarAccesoBarberia } from "@/lib/suscripcion";
+import { verificarAccesoBarberia } from "@/lib/actions/verificarAccesoBarberia";
+import { crearEstadoAcceso } from "@/lib/estado-acceso";
+
 import { SidebarAdmin } from "@/components/SidebarAdmin";
-import { AvisoSuscripcion } from "@/components/AvisoSuscripcion";
 
 export default async function AdminLayout({
   children,
   params,
 }: {
   children: React.ReactNode;
-  params: { slug: string };
+  params: {
+    slug: string;
+  };
 }) {
   const session = await getServerSession(authOptions);
-  if (!session?.user) redirect("/login");
+
+  if (!session?.user) {
+    redirect("/login");
+  }
 
   const membresia = session.user.membresias.find(
-    (m) => m.barberiaSlug === params.slug && m.rol === "DUENO"
+    (m) =>
+      m.barberiaSlug === params.slug &&
+      m.rol === "DUENO"
   );
-  if (!membresia) redirect("/panel");
 
-  const barberia = await prisma.barberia.findUnique({
-    where: { slug: params.slug },
-  });
-  if (!barberia) redirect("/panel");
+  if (!membresia) {
+    redirect("/panel");
+  }
 
-  const estadoAcceso = await verificarAccesoBarberia(barberia.id);
+  const acceso = await verificarAccesoBarberia(
+    params.slug
+  );
+
+  if (!acceso.barberia) {
+    redirect("/panel");
+  }
+
+  const estadoAcceso = crearEstadoAcceso(acceso);
 
   return (
     <div className="min-h-screen bg-brand-50 overflow-x-hidden lg:flex">
       <SidebarAdmin
         slug={params.slug}
-        nombreBarberia={barberia.nombre}
+        nombreBarberia={acceso.barberia.nombre}
+        logoUrl={acceso.barberia.logoUrl}
         estadoAcceso={estadoAcceso}
-        logoUrl={barberia.logoUrl}
       />
+
       <main className="flex-1 p-4 lg:p-6 min-w-0 max-w-full">
-        {!estadoAcceso.tieneAcceso ? (
-          <AvisoSuscripcion estadoAcceso={estadoAcceso} slug={params.slug} />
-        ) : (
-          <>
-            {estadoAcceso.mensaje && estadoAcceso.estado === "VENCIDA" && (
-              <div className="mb-4 bg-warning-50 text-warning-700 text-sm px-4 py-3 rounded-md">
-                {estadoAcceso.mensaje}
-              </div>
-            )}
-            {children}
-          </>
+        {acceso.mensaje && (
+          <div className="mb-4 rounded-md bg-warning-50 px-4 py-3 text-sm text-warning-700">
+            {acceso.mensaje}
+          </div>
         )}
+
+        {children}
       </main>
     </div>
   );

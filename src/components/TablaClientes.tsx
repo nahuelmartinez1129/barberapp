@@ -32,7 +32,7 @@ export function TablaClientes({
       : clientes.filter((c) => {
           return (
             c.nombre.toLowerCase().includes(termino) ||
-            c.email.toLowerCase().includes(termino) ||
+            (c.email ?? "").toLowerCase().includes(termino) ||
             (c.telefono ?? "").toLowerCase().includes(termino)
           );
         });
@@ -99,7 +99,7 @@ export function TablaClientes({
                         <span className="text-brand-900 font-medium">{c.nombre}</span>
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-brand-500">{c.email}</td>
+                    <td className="px-4 py-3 text-brand-500">{c.email ?? "—"}</td>
                     <td className="px-4 py-3 text-brand-500">{c.telefono ?? "—"}</td>
                     <td className="px-4 py-3 text-right text-brand-900">{c.visitas}</td>
                     <td className="px-4 py-3 text-right text-brand-900">
@@ -131,7 +131,9 @@ export function TablaClientes({
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="font-medium text-brand-900 truncate">{c.nombre}</p>
-                    <p className="text-xs text-brand-400 truncate">{c.email}</p>
+                    <p className="text-xs text-brand-400 truncate">
+                      {c.email ?? c.telefono ?? "—"}
+                    </p>
                   </div>
                   <BadgeClasificacion clasificacion={c.clasificacion} />
                 </div>

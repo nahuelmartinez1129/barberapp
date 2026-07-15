@@ -3,6 +3,8 @@
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
+import { requireSuscripcionActiva } from "@/lib/actions/guards/requireSuscripcionActiva";
+
 const esquemaDia = z.object({
   diaSemana: z.number().int().min(0).max(6),
   activo: z.boolean(),
@@ -20,7 +22,11 @@ export async function guardarHorarioBarberia(
 ) {
   const datos = esquemaGuardarHorario.parse(input);
 
-  // Validacion basica: si el dia esta activo, hora fin debe ser posterior a hora inicio
+  await requireSuscripcionActiva(
+  datos.barberiaId
+);
+
+  // Validación
   for (const dia of datos.dias) {
     if (dia.activo && dia.horaInicio >= dia.horaFin) {
       throw new Error(
@@ -29,9 +35,10 @@ export async function guardarHorarioBarberia(
     }
   }
 
-  await prisma.$transaction(
-    datos.dias.map((dia) =>
-      prisma.horarioBarberia.upsert({
+  await prisma.$transaction(async (tx) => {
+    // Guardar horarios
+    for (const dia of datos.dias) {
+      await tx.horarioBarberia.upsert({
         where: {
           barberiaId_diaSemana: {
             barberiaId: datos.barberiaId,
@@ -50,7 +57,17 @@ export async function guardarHorarioBarberia(
           horaInicio: dia.horaInicio,
           horaFin: dia.horaFin,
         },
-      })
-    )
-  );
+      });
+    }
+
+    // ✅ Marcar onboarding
+    await tx.barberia.update({
+      where: {
+        id: datos.barberiaId,
+      },
+      data: {
+        horariosConfigurados: true,
+      },
+    });
+  });
 }

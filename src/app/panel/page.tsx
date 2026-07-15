@@ -16,12 +16,12 @@ export default async function PanelRedirect() {
   }
 
   // Si el usuario tiene una sola membresia, va directo a ese panel.
-  // Si tiene varias (ej. es cliente de varias barberias), mostramos un selector.
+  // Los clientes finales ya no tienen membresia/sesion (ver modelo
+  // Cliente): NextAuth ahora es exclusivo de DUENO y BARBERO.
   if (membresias.length === 1) {
     const m = membresias[0];
     if (m.rol === "DUENO") redirect(`/admin/${m.barberiaSlug}`);
     if (m.rol === "BARBERO") redirect(`/barbero/${m.barberiaSlug}`);
-    if (m.rol === "CLIENTE") redirect(`/cliente/${m.barberiaSlug}`);
   }
 
   redirect("/panel/seleccionar");

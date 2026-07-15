@@ -36,9 +36,12 @@ export default async function PaginaBarbero({
   return (
     <div className="min-h-screen bg-brand-50 py-6 px-4">
       <AgendaBarbero
+        barberiaId={membresia.barberiaId}
+        barberoId={membresia.miembroId}
         nombreBarbero={session.user.name ?? ""}
         turnos={turnosHoy.map((t) => ({
           id: t.id,
+          fecha: t.fecha.toISOString().slice(0, 10),
           horaInicio: t.horaInicio,
           clienteNombre: t.cliente.nombre,
           servicioNombre: t.servicio.nombre,

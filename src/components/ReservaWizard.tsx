@@ -1,10 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { formatearMoneda, iniciales } from "@/lib/utils";
-import { crearTurno } from "@/lib/actions/turnos";
+import { crearTurnoConDatosCliente } from "@/lib/actions/turnos";
 
 type Barbero = {
   id: string;
@@ -33,7 +32,6 @@ export function ReservaWizard({
   barberia: Barberia;
   servicios: Servicio[];
 }) {
-  const { data: session } = useSession();
   const router = useRouter();
   const [servicioId, setServicioId] = useState<string | null>(null);
   const [barberoId, setBarberoId] = useState<string | null>(null);
@@ -41,17 +39,22 @@ export function ReservaWizard({
   const [horario, setHorario] = useState<string | null>(null);
   const [horariosDisponibles, setHorariosDisponibles] = useState<string[]>([]);
   const [cargandoHorarios, setCargandoHorarios] = useState(false);
+
+  // Paso final: datos del cliente (sin login, sin password, sin registro)
+  const [nombreCliente, setNombreCliente] = useState("");
+  const [telefonoCliente, setTelefonoCliente] = useState("");
+  const [emailCliente, setEmailCliente] = useState("");
+  const [observaciones, setObservaciones] = useState("");
+
   const [confirmando, setConfirmando] = useState(false);
   const [reservaOk, setReservaOk] = useState(false);
   const [error, setError] = useState("");
 
   const servicioActivo = servicios.find((s) => s.id === servicioId);
-  // Solo barberos que tienen asignado el servicio elegido
   const barberosDisponibles = servicioActivo
     ? servicioActivo.barberosAsignados.map((bs) => bs.barbero)
     : [];
 
-  // Al cambiar servicio, barbero u horario disponible, resetear seleccion de horario
   useEffect(() => {
     setHorario(null);
     setHorariosDisponibles([]);
@@ -67,25 +70,32 @@ export function ReservaWizard({
       .finally(() => setCargandoHorarios(false));
   }, [barberoId, fecha, servicioActivo]);
 
+  function datosClienteValidos(): boolean {
+    return nombreCliente.trim().length >= 2 && telefonoCliente.trim().length >= 6;
+  }
+
   async function confirmarReserva() {
-    if (!session?.user) {
-      setError("Necesitás iniciar sesión para reservar un turno.");
+    if (!servicioId || !barberoId || !horario) return;
+    if (!datosClienteValidos()) {
+      setError("Completá tu nombre y teléfono para confirmar.");
       return;
     }
-    if (!servicioId || !barberoId || !horario) return;
 
     setConfirmando(true);
     setError("");
     try {
-      await crearTurno({
+      await crearTurnoConDatosCliente({
         barberiaId: barberia.id,
         servicioId,
         barberoId,
-        clienteId: session.user.id,
         fecha,
         horaInicio: horario,
         duracionMinutos: servicioActivo!.duracionMinutos,
         precio: parseFloat(servicioActivo!.precio.toString()),
+        nombre: nombreCliente.trim(),
+        telefono: telefonoCliente.trim(),
+        email: emailCliente.trim() || undefined,
+        observaciones: observaciones.trim() || undefined,
       });
 
       router.refresh();
@@ -246,6 +256,42 @@ export function ReservaWizard({
           </div>
         )}
 
+        {/* Paso 4: datos del cliente, sin login */}
+        {horario && (
+          <div>
+            <p className="text-xs font-medium text-brand-400 mb-2">4. Datos del cliente</p>
+            <div className="space-y-2.5">
+              <input
+                value={nombreCliente}
+                onChange={(e) => setNombreCliente(e.target.value)}
+                placeholder="Nombre completo"
+                className="input-base"
+              />
+              <input
+                value={telefonoCliente}
+                onChange={(e) => setTelefonoCliente(e.target.value)}
+                placeholder="Teléfono"
+                type="tel"
+                className="input-base"
+              />
+              <input
+                value={emailCliente}
+                onChange={(e) => setEmailCliente(e.target.value)}
+                placeholder="Email (opcional)"
+                type="email"
+                className="input-base"
+              />
+              <textarea
+                value={observaciones}
+                onChange={(e) => setObservaciones(e.target.value)}
+                placeholder="Observaciones (opcional)"
+                rows={2}
+                className="input-base resize-none"
+              />
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="bg-danger-50 text-danger-700 text-sm px-3 py-2 rounded-md">
             {error}
@@ -254,17 +300,11 @@ export function ReservaWizard({
 
         <button
           onClick={confirmarReserva}
-          disabled={!horario || confirmando}
+          disabled={!horario || !datosClienteValidos() || confirmando}
           className="btn-primary w-full"
         >
           {confirmando ? "Confirmando..." : "Confirmar turno"}
         </button>
-
-        {!session?.user && (
-          <p className="text-xs text-center text-brand-400">
-            Necesitás <a href="/login" className="text-accent-600 underline">iniciar sesión</a> para confirmar
-          </p>
-        )}
       </div>
     </div>
   );
